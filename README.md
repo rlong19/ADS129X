@@ -25,7 +25,7 @@ Libraries required by the sketches:
 * [github.com/PaulStoffregen/Adafruit_nRF8001/](https://github.com/PaulStoffregen/Adafruit_nRF8001/tree/bb385aed176389d806016617a18d7e347074bc3c)
 * [github.com/duff2013/LowPower_Teensy3/](https://github.com/duff2013/LowPower_Teensy3/tree/721e3bcab47cc7cdb03f0aee9e11d47611430aa9)
 
-The Serial_OBCI example has been updated to use the ADS1299 chip and the Teensy 4.0.   This was tested on a reference hardware board from the [Biopotential Signal Library] (https://hackaday.io/project/5809-biopotential-signal-library) which is shared on the [OSH Park](https://oshpark.com/shared_projects/FCVCtANz) website and available for purchase for $13 for 3 boards.
+The Serial_OBCI example has been updated to use the ADS1299 chip and the Teensy 4.0.   This was tested on a reference hardware board from the [Biopotential Signal Library](https://hackaday.io/project/5809-biopotential-signal-library) which is shared on the [OSH Park](https://oshpark.com/shared_projects/FCVCtANz) website and available for purchase for $13 for 3 boards.
 
 License
 -------
