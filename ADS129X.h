@@ -206,6 +206,23 @@
 #define ADS129X_GAIN_4X     0x4
 #define ADS129X_GAIN_8X     0x5
 #define ADS129X_GAIN_12X    0x6
+// ADS1299 PGA gain
+// These bits determine the PGA gain setting.
+// 000 : 1
+// 001 : 2
+// 010 : 4
+// 011 : 6
+// 100 : 8
+// 101 : 12
+// 110 : 24
+// 111 : Do not use
+#define ADS1299_GAIN_1X     0x0
+#define ADS1299_GAIN_2X     0x1
+#define ADS1299_GAIN_4X     0x2
+#define ADS1299_GAIN_6X     0x3
+#define ADS1299_GAIN_8X     0x4
+#define ADS1299_GAIN_12X    0x5
+#define ADS1299_GAIN_24X    0x6
 
 // Mux Configuration
 #define ADS129X_MUX_NORMAL      0x0 // Normal electrode input (default)
@@ -225,6 +242,23 @@
 #define ADS129X_SAMPLERATE_64   0x2
 #define ADS129X_SAMPLERATE_32   0x1
 #define ADS129X_SAMPLERATE_16   0x0
+	// These bits determine the output data rate of the device. fMOD =
+	// fCLK / 2.
+	// 000 : fMOD / 64 (16 kSPS)
+	// 001 : fMOD / 128 (8 kSPS)
+	// 010 : fMOD / 256 (4 kSPS)
+	// 011 : fMOD / 512 (2 kSPS)
+	// 100 : fMOD / 1024 (1 kSPS)
+	// 101 : fMOD / 2048 (500 SPS)
+	// 110 : fMOD / 4096 (250 SPS)
+	// 111 : Reserved (do not use)
+#define ADS1299_SAMPLERATE_250 0x6
+#define ADS1299_SAMPLERATE_500  0x5
+#define ADS1299_SAMPLERATE_1k  0x4
+#define ADS1299_SAMPLERATE_2k  0x3
+#define ADS1299_SAMPLERATE_4k   0x2
+#define ADS1299_SAMPLERATE_8k   0x1
+#define ADS1299_SAMPLERATE_16k   0x0
 
 class ADS129X {
     public:
