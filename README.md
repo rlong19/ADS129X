@@ -7,7 +7,7 @@ The library has been tested on both ADS1298, ADS1294 and ADS1299 and ADS1299-6 c
 
 ## Modes of operation
 
-The library support two modes of operation: interrupt-driven and polling. Both modes use the same API and your sketch still has to poll for available data even when in interrupt mode. However in interrupt mode the response time to changes on the *DRDY* line is much quicker and thus higher sample-rates are supported and tested on the Teensy 3.2, up to 8ksps.  The Teensy 4.0 has been tested and will allow running at the full 16ksps in both interrupt and polling mode.
+The library support two modes of operation: interrupt-driven and polling. Both modes use the same API and your sketch still has to poll for available data even when in interrupt mode. However in interrupt mode the response time to changes on the *DRDY* line is much quicker and thus higher sample-rates are supported and tested on the Teensy 3.2, up to 16ksps.  The Teensy 4.0 has been tested and will allow running at the full 16ksps for ADS1299 and up to the full 32ksps for ADS1298 in both interrupt and polling mode.
 
 Interrupt mode is the default, to switch to the old polling operation add this to your sketch as the first line:
 
