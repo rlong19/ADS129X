@@ -234,14 +234,26 @@
 #define ADS129X_MUX_RLD_DRP     0x6 // RLD_DRP (positive electrode is the driver)
 #define ADS129X_MUX_RLD_DRN     0x7 // RLD_DRN (negative electrode is the driver)
 
+// Output data rate
+// For High-Resolution mode, fMOD = fCLK / 4. For low power mode,
+// fMOD = fCLK / 8.
+// These bits determine the output data rate of the device.
+// 000: fMOD / 16 (HR Mode: 32 kSPS, LP Mode: 16 kSPS)
+// 001: fMOD / 32 (HR Mode: 16 kSPS, LP Mode: 8 kSPS)
+// 010: fMOD / 64 (HR Mode: 8 kSPS, LP Mode: 4 kSPS)
+// 011: fMOD / 128 (HR Mode: 4 kSPS, LP Mode: 2 kSPS)
+// 100: fMOD / 256 (HR Mode: 2 kSPS, LP Mode: 1 kSPS)
+// 101: fMOD / 512 (HR Mode: 1 kSPS, LP Mode: 500 SPS)
+// 110: fMOD / 1024 (HR Mode: 500 SPS, LP Mode: 250 SPS)
+// 111: Reserved (do not use)
 // Sample-rate Configuration
-#define ADS129X_SAMPLERATE_1024 0x6
-#define ADS129X_SAMPLERATE_512  0x5
-#define ADS129X_SAMPLERATE_256  0x4
-#define ADS129X_SAMPLERATE_128  0x3
-#define ADS129X_SAMPLERATE_64   0x2
-#define ADS129X_SAMPLERATE_32   0x1
-#define ADS129X_SAMPLERATE_16   0x0
+#define ADS129X_SAMPLERATE_500  0x6
+#define ADS129X_SAMPLERATE_1k   0x5
+#define ADS129X_SAMPLERATE_2k   0x4
+#define ADS129X_SAMPLERATE_4k   0x3
+#define ADS129X_SAMPLERATE_8k   0x2
+#define ADS129X_SAMPLERATE_16k  0x1
+#define ADS129X_SAMPLERATE_32k  0x0
 	// These bits determine the output data rate of the device. fMOD =
 	// fCLK / 2.
 	// 000 : fMOD / 64 (16 kSPS)
@@ -252,13 +264,13 @@
 	// 101 : fMOD / 2048 (500 SPS)
 	// 110 : fMOD / 4096 (250 SPS)
 	// 111 : Reserved (do not use)
-#define ADS1299_SAMPLERATE_250 0x6
+#define ADS1299_SAMPLERATE_250  0x6
 #define ADS1299_SAMPLERATE_500  0x5
-#define ADS1299_SAMPLERATE_1k  0x4
-#define ADS1299_SAMPLERATE_2k  0x3
+#define ADS1299_SAMPLERATE_1k   0x4
+#define ADS1299_SAMPLERATE_2k   0x3
 #define ADS1299_SAMPLERATE_4k   0x2
 #define ADS1299_SAMPLERATE_8k   0x1
-#define ADS1299_SAMPLERATE_16k   0x0
+#define ADS1299_SAMPLERATE_16k  0x0
 
 class ADS129X {
     public:
@@ -286,8 +298,6 @@ class ADS129X {
         byte getDeviceId();
         boolean getData(long *buffer);
         void configChannel(byte _channel, boolean _powerDown, byte _gain, byte _mux);
-
-    private:
         int DRDY, CS; //pin numbers for "Data Ready" (DRDY) and "Chip Select" CS (Datasheet, pg. 26)
 };
 
