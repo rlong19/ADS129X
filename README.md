@@ -27,6 +27,8 @@ Libraries required by the sketches:
 
 The Serial_OBCI example has been updated to use the ADS1299 chip and the Teensy 4.0.   This was tested on a reference hardware board from the [Biopotential Signal Library](https://hackaday.io/project/5809-biopotential-signal-library) which is shared on the [OSH Park](https://oshpark.com/shared_projects/FCVCtANz) website and available for purchase for $13 for 3 boards.
 
+![Reference Hardware](https://github.com/rlong19/ADS129X/blob/master/ADS1299_Teensy4.jpg)
+
 License
 -------
 
