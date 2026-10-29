@@ -8,7 +8,14 @@
 
 #include <SPI.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#if defined(ARDUINO_ARCH_ESP32)
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#endif
 
 ADS129X *ADS129X::isrInstance = nullptr;
 
@@ -56,7 +63,17 @@ ADS129X::ADS129X(int drdy, int cs, int reset, int pwdn, int start)
       sampleCounter(0),
       cmdState(CMD_IDLE),
       cmdLen(0),
-      cmdStartMs(0) {
+      cmdStartMs(0),
+      ringOn(false),
+      boardReady(false),
+      ringPkts(nullptr),
+      ringCap(0),
+      ringHead(0),
+      ringTail(0),
+      ringDrop(0),
+      drdySem(nullptr),
+      spiMutex(nullptr),
+      readerStarted(false) {
     memset(&defaults, 0, sizeof(defaults));
     memset(shadow, 0, sizeof(shadow));
     memset(shadowSet, 0, sizeof(shadowSet));
@@ -171,10 +188,30 @@ void ADS129X::armIrq() {
     irqArmed = true;
 }
 
+void ADS129X::lockSpiBus() {
+#if defined(ARDUINO_ARCH_ESP32)
+    if (spiMutex != nullptr) {
+        xSemaphoreTake(static_cast<SemaphoreHandle_t>(spiMutex), portMAX_DELAY);
+    }
+#else
+    (void)0;
+#endif
+}
+
+void ADS129X::unlockSpiBus() {
+#if defined(ARDUINO_ARCH_ESP32)
+    if (spiMutex != nullptr) {
+        xSemaphoreGive(static_cast<SemaphoreHandle_t>(spiMutex));
+    }
+#endif
+}
+
 void ADS129X::beginRegisterAccess() {
     if (accessDepth == 0) {
         savedRearm = irqArmed;
         disarmIrq();
+        // Wait until the DRDY task finishes any SPI read already in progress.
+        lockSpiBus();
         savedRdatac = inRdatac;
         if (inRdatac) {
             sendCommand(ADS1299_CMD_SDATAC);
@@ -196,6 +233,7 @@ void ADS129X::endRegisterAccess() {
         sendCommand(ADS1299_CMD_RDATAC);
         inRdatac = true;
     }
+    unlockSpiBus();
     if (savedRearm) {
         armIrq();
     }
@@ -260,6 +298,12 @@ bool ADS129X::begin() {
     if (!channelCountForced) {
         channels = idOk ? detectedChannels : ADS1299_DEFAULT_CHANNELS;
     }
+    boardReady = true;
+#if defined(ARDUINO_ARCH_ESP32)
+    if (ringOn) {
+        startEsp32Reader();
+    }
+#endif
     return idOk;
 }
 
@@ -545,14 +589,27 @@ void ADS129X::drdyIsr() {
     if (dev == nullptr) {
         return;
     }
+#if defined(ARDUINO_ARCH_ESP32)
+    if (dev->ringOn && dev->drdySem != nullptr) {
+        BaseType_t woken = pdFALSE;
+        if (xSemaphoreGiveFromISR(static_cast<SemaphoreHandle_t>(dev->drdySem), &woken) != pdTRUE) {
+            uint32_t missedNow = dev->missed;
+            dev->missed = missedNow + 1;
+        }
+        if (woken == pdTRUE) {
+            portYIELD_FROM_ISR(woken);
+        }
+        return;
+    }
+#endif
     if (dev->dataReady) {
         // C++20 deprecates ++ on volatile. Read, add, store.
         uint32_t missedNow = dev->missed;
         dev->missed = missedNow + 1;
     }
 #if defined(ARDUINO_ARCH_ESP32)
-    // The ESP-IDF SPI driver is not safe to call from this interrupt.
-    // loop() clocks the frame out while DRDY is still low.
+    // Ring buffer is off. loop() clocks the frame out. SPI from this ISR is
+    // not safe with the Arduino ESP32 driver.
     dev->dataReady = true;
 #else
     int32_t local[9];
@@ -561,6 +618,12 @@ void ADS129X::drdyIsr() {
         dev->isrSample[i] = local[i];
     }
     dev->dataReady = true;
+    if (dev->ringOn) {
+        uint8_t packet[ADS1299_OPENBCI_BYTES];
+        uint8_t number = dev->sampleCounter++;
+        dev->fillOpenBciPacket(packet, local, number);
+        dev->pushRing(packet);
+    }
 #endif
 }
 
@@ -628,6 +691,13 @@ uint8_t ADS129X::gainMultiplier(uint8_t gainCode) {
     return ADS1299_GAIN_VALUE[gainCode];
 }
 
+uint8_t ADS129X::channelGainCode(uint8_t channel) const {
+    if (channel < 1 || channel > 8) {
+        return activeGain;
+    }
+    return chCfg[channel - 1].gain;
+}
+
 const char *ADS129X::deviceName() const {
     uint8_t n = detectedChannels ? detectedChannels : channels;
     if (n == 4) {
@@ -650,8 +720,12 @@ uint16_t ADS129X::sampleRateHz() const {
 }
 
 void ADS129X::fillOpenBciPacket(uint8_t *dest, const int32_t sample[9]) {
+    fillOpenBciPacket(dest, sample, sampleCounter++);
+}
+
+void ADS129X::fillOpenBciPacket(uint8_t *dest, const int32_t sample[9], uint8_t sampleNumber) {
     dest[0] = ADS1299_OPENBCI_START;
-    dest[1] = sampleCounter++;
+    dest[1] = sampleNumber;
     for (uint8_t ch = 0; ch < 8; ch++) {
         int32_t code = 0;
         if (ch < channels && chCfg[ch].packetEnable) {
@@ -1004,3 +1078,100 @@ void ADS129X::handleHostByte(uint8_t cmd, Print &reply, bool &streaming) {
         }
     }
 }
+
+bool ADS129X::enableSampleRing(uint16_t capacity) {
+    if (capacity < 16) {
+        capacity = 16;
+    }
+    if (ringPkts != nullptr) {
+        free(ringPkts);
+        ringPkts = nullptr;
+    }
+    ringPkts = static_cast<uint8_t *>(malloc((size_t)capacity * ADS1299_OPENBCI_BYTES));
+    if (ringPkts == nullptr) {
+        ringOn = false;
+        return false;
+    }
+    ringCap = capacity;
+    ringHead = 0;
+    ringTail = 0;
+    ringDrop = 0;
+    ringOn = true;
+#if defined(ARDUINO_ARCH_ESP32)
+    if (boardReady) {
+        startEsp32Reader();
+    }
+#endif
+    return true;
+}
+
+bool ADS129X::pushRing(const uint8_t *packet) {
+    if (!ringOn || ringPkts == nullptr || packet == nullptr) {
+        return false;
+    }
+    uint16_t head = ringHead;
+    uint16_t next = (uint16_t)((head + 1) % ringCap);
+    if (next == ringTail) {
+        uint32_t dropped = ringDrop;
+        ringDrop = dropped + 1;
+        return false;
+    }
+    memcpy(ringPkts + (size_t)head * ADS1299_OPENBCI_BYTES, packet, ADS1299_OPENBCI_BYTES);
+    __sync_synchronize();
+    ringHead = next;
+    return true;
+}
+
+bool ADS129X::popOpenBciPacket(uint8_t dest[ADS1299_OPENBCI_BYTES]) {
+    if (!ringOn || ringPkts == nullptr || dest == nullptr) {
+        return false;
+    }
+    uint16_t tail = ringTail;
+    if (tail == ringHead) {
+        return false;
+    }
+    memcpy(dest, ringPkts + (size_t)tail * ADS1299_OPENBCI_BYTES, ADS1299_OPENBCI_BYTES);
+    __sync_synchronize();
+    ringTail = (uint16_t)((tail + 1) % ringCap);
+    return true;
+}
+
+void ADS129X::captureIntoRing() {
+    int32_t sample[9];
+    readFrame(sample);
+    uint8_t packet[ADS1299_OPENBCI_BYTES];
+    uint8_t number = sampleCounter++;
+    fillOpenBciPacket(packet, sample, number);
+    pushRing(packet);
+}
+
+#if defined(ARDUINO_ARCH_ESP32)
+void ADS129X::startEsp32Reader() {
+    if (readerStarted || !ringOn || drdySem != nullptr) {
+        return;
+    }
+    drdySem = xSemaphoreCreateCounting(ringCap, 0);
+    spiMutex = xSemaphoreCreateMutex();
+    if (drdySem == nullptr || spiMutex == nullptr) {
+        return;
+    }
+    xTaskCreatePinnedToCore(readerTask, "ads-drdy", 4096, this, 5, nullptr, 1);
+    readerStarted = true;
+}
+
+void ADS129X::readerTask(void *arg) {
+    ADS129X *dev = static_cast<ADS129X *>(arg);
+    for (;;) {
+        if (xSemaphoreTake(static_cast<SemaphoreHandle_t>(dev->drdySem), portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        if (xSemaphoreTake(static_cast<SemaphoreHandle_t>(dev->spiMutex), pdMS_TO_TICKS(5)) != pdTRUE) {
+            uint32_t missedNow = dev->missed;
+            dev->missed = missedNow + 1;
+            continue;
+        }
+        dev->captureIntoRing();
+        xSemaphoreGive(static_cast<SemaphoreHandle_t>(dev->spiMutex));
+    }
+}
+#endif

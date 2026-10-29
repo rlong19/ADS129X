@@ -208,6 +208,18 @@ public:
     // Call before START(). One interrupt-mode device is supported.
     void setPolling(bool enabled);
 
+    // Queue 33-byte OpenBCI packets filled from the DRDY path. A slow
+    // WiFi or Bluetooth write then does not have to clock SPI, and does
+    // not overwrite the one sample getData() keeps. On ESP32 the GPIO
+    // ISR only wakes a high-priority task, because the Arduino SPI driver
+    // is not safe to call from that interrupt; that task does the read.
+    // Call before begin(). Returns false if the queue cannot be allocated.
+    bool enableSampleRing(uint16_t capacity = 512);
+    bool popOpenBciPacket(uint8_t dest[ADS1299_OPENBCI_BYTES]);
+    uint32_t ringDropped() const { return ringDrop; }
+    // CHnSET gain code (0..6) for channel 1..8.
+    uint8_t channelGainCode(uint8_t channel) const;
+
     // Power-up, tPOR, reset pulse, SDATAC, ID read. Does not start conversions.
     // Returns true when the ID byte looks like an ADS1299-4/6/8.
     bool begin();
@@ -244,6 +256,7 @@ public:
     // turned off with the '1'..'8' commands, are 0x000000. Aux is six 0x00
     // bytes and the footer is 0xC0 (no accelerometer on this board).
     void fillOpenBciPacket(uint8_t *dest, const int32_t sample[9]);
+    void fillOpenBciPacket(uint8_t *dest, const int32_t sample[9], uint8_t sampleNumber);
     void sendOpenBciPacket(Print &out, const int32_t sample[9]);
 
     // Eight space-separated signed counts, unused channels 0. For the plotter.
@@ -335,6 +348,17 @@ private:
     uint8_t cmdLen;
     uint32_t cmdStartMs;
 
+    bool ringOn;
+    bool boardReady;
+    uint8_t *ringPkts;
+    uint16_t ringCap;
+    volatile uint16_t ringHead;
+    volatile uint16_t ringTail;
+    volatile uint32_t ringDrop;
+    void *drdySem;
+    void *spiMutex;
+    bool readerStarted;
+
     static ADS129X *isrInstance;
 #if defined(ARDUINO_ARCH_ESP32)
     static void IRAM_ATTR drdyIsr();
@@ -361,6 +385,14 @@ private:
     void setChannelPower(uint8_t channel, bool powerDown);
     void say(Print &out, bool streaming, const char *msg);
     uint8_t channelMask() const;
+    void lockSpiBus();
+    void unlockSpiBus();
+    bool pushRing(const uint8_t *packet);
+    void captureIntoRing();
+#if defined(ARDUINO_ARCH_ESP32)
+    void startEsp32Reader();
+    static void readerTask(void *arg);
+#endif
 };
 
 #endif
